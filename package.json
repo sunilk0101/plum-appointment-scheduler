@@ -1,0 +1,38 @@
+{
+  "name": "plum-appointment-scheduler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plum SDE intern assignment: AI appointment scheduler (OCR, entity extraction, Asia/Kolkata normalization, guardrails).",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "powershell -ExecutionPolicy Bypass -File examples/demo.ps1"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "luxon": "^3.7.2",
+    "multer": "^1.4.5-lts.2",
+    "tesseract.js": "^5.1.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.23",
+    "@types/luxon": "^3.7.1",
+    "@types/multer": "^1.4.13",
+    "@types/node": "^24.6.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
