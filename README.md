@@ -1,130 +1,32 @@
 # AI-Powered Appointment Scheduler
 
-Backend for **Plum SDE Intern Assignment — Problem Statement 1**.
+This is a small backend for the Plum SDE intern assignment, problem 1.
 
-It turns a typed note or a photo of a note into a scheduling JSON object:
+You give it a sentence or a photo of a note. It reads the note and returns a booking: which department, which date, and what time, in India time (`Asia/Kolkata`).
 
-`OCR / text -> entity extraction -> Asia/Kolkata normalization -> guardrails -> appointment`
-
-The sample sentence `Book dentist next Friday at 3pm`, read on **Friday 19 September 2025**, becomes Dentistry on **2025-09-26** at **15:00** in `Asia/Kolkata`.
-
-## Why this problem
-
-Plum's product work is about getting people to care without the usual friction. An appointment request is a small version of that: the input is messy (a sentence, a photo, an email), and the output has to be structured, local to India, and honest when the request is unclear. The other problem statements are valid. This one is the closest to a feature a care team would actually ship, and it exercises every item in the rubric: schema correctness, OCR, guardrails, and an AI chain that is not allowed to invent fields.
-
-## Architecture
+Example. Suppose today is Friday, 19 September 2025, and the note says:
 
 ```text
-text or image
-    |
-    v
-Step 1  Extract
-        typed text is kept as-is
-        images go through Tesseract OCR
-    |
-    v
-Step 2  Propose entities
-        date phrase, time phrase, department
-        deterministic extractor, optionally an LLM
-    |
-    v
-        Validate
-        every phrase must occur in the source
-        LLM output that adds a field is discarded
-        a grounded model parse that disagrees with the rules stops the request
-    |
-    v
-Step 3  Normalize
-        phrases -> ISO date + 24-hour time in Asia/Kolkata
-        date math does not go through the model
-    |
-    v
-Step 4  Appointment
-        department alias -> canonical name (dentist -> Dentistry)
-        status ok, or needs_clarification
+Book dentist next Friday at 3pm
 ```
 
-Date math stays in code on purpose. A model is useful for reading messy language. It is a bad clock. The validator is the guardrail that keeps a fluent model from booking a department or a day the note never mentioned.
-
-Without `OPENAI_API_KEY`, the same two-step chain runs on a deterministic proposer and a source-text validator, so the demo and the tests are reproducible. With a key, propose and validate are real chat completions. Ungrounded or conflicting model output never becomes the response.
-
-## Setup
-
-Node.js 20 or newer.
-
-```bash
-cd plum-appointment-scheduler
-npm install
-copy .env.example .env   # Windows
-# cp .env.example .env   # macOS / Linux
-npm start
-```
-
-The server listens on `http://localhost:3000`.
-
-Optional model settings in `.env`:
-
-```bash
-OPENAI_API_KEY=
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
-```
-
-`OPENAI_BASE_URL` can point at any OpenAI-compatible API (OpenAI, Groq, OpenRouter). Leave the key empty to run fully offline.
-
-The first image request downloads the English Tesseract model into `.cache/tesseract`.
-
-Check the suite:
-
-```bash
-npm test
-npm run typecheck
-```
-
-Expose it for review:
-
-```bash
-ngrok http 3000
-```
-
-## API
-
-| Method | Path | Success body |
-| --- | --- | --- |
-| `POST` | `/api/v1/extract` | Step 1 `{ raw_text, confidence }` |
-| `POST` | `/api/v1/entities` | Step 2 `{ entities, entities_confidence }` |
-| `POST` | `/api/v1/normalize` | Step 3 `{ normalized, normalization_confidence }` |
-| `POST` | `/api/v1/appointments` | Step 4 `{ appointment, status }` |
-| `POST` | `/api/v1/pipeline` | All four steps, plus validation checks and the AI trace |
-| `GET` | `/health` | `{ "status": "ok" }` |
-
-Send JSON:
+The service answers:
 
 ```json
 {
-  "text": "Book dentist next Friday at 3pm",
-  "reference_date": "2025-09-19"
-}
-```
-
-`reference_date` is optional. It is the "today" used for phrases like `next Friday`, interpreted in `Asia/Kolkata`. Omit it to use the current date. The assignment's `2025-09-26` is what `next Friday` means when today is Friday `2025-09-19`.
-
-`/api/v1/normalize` can also take entities from step 2:
-
-```json
-{
-  "entities": {
-    "date_phrase": "next Friday",
-    "time_phrase": "3pm",
-    "department": "dentist"
+  "appointment": {
+    "department": "Dentistry",
+    "date": "2025-09-26",
+    "time": "15:00",
+    "tz": "Asia/Kolkata"
   },
-  "reference_date": "2025-09-19"
+  "status": "ok"
 }
 ```
 
-Images are multipart form data. Use the field name `image` (or `file`) and an optional `reference_date` field. Do not send `text` and a file in the same request.
+`dentist` becomes Dentistry. `next Friday` becomes 26 September 2025. `3pm` becomes 15:00.
 
-Business guardrails return HTTP 200 and this body, on `/entities`, `/normalize`, `/appointments`, and `/pipeline`:
+If the note is unclear, for example "Friday or Monday", it does not guess. It returns:
 
 ```json
 {
@@ -133,15 +35,53 @@ Business guardrails return HTTP 200 and this body, on `/entities`, `/normalize`,
 }
 ```
 
-`/pipeline` adds `failure_reason` (`missing_date`, `ambiguous_time`, `past_date`, `model_conflict`, and so on) so a reviewer can see which check fired. The four step endpoints stay on the assignment schema and do not add that field.
+## Run it
 
-Malformed JSON, a bad `reference_date`, an empty body, or a non-image upload returns `400` or `415` with `{ "error": "..." }`. An image with no readable text returns `422`.
+You need Node.js 20 or newer.
 
-## Sample requests
+```bash
+npm install
+npm start
+```
 
-These reproduce the assignment's expected appointment. JSON numbers drop the trailing zero, so `0.90` is `0.9`.
+Open http://localhost:3000. You should see a short list of the endpoints. Health check: http://localhost:3000/health
 
-### Step 1 — text extraction
+To run the same calls from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File examples/demo.ps1
+```
+
+Tests:
+
+```bash
+npm test
+```
+
+The first photo request downloads the English OCR model into `.cache/tesseract`. Later photo requests reuse it.
+
+To show the API to someone outside your laptop:
+
+```bash
+ngrok http 3000
+```
+
+## What happens to a note
+
+Four steps, in this order.
+
+1. **Read the text.** A typed note is kept as you sent it. A photo is read with Tesseract OCR. The reply is `raw_text` and a confidence score.
+2. **Find the three fields.** The date words, the time words, and the department. For the sample above those are `next Friday`, `3pm`, and `dentist`. Small OCR mistakes are fixed here: `nxt` is read as `next`, and `3 pm` is read as `3pm`. The original photo text is not rewritten.
+3. **Turn words into a real date and time.** This is done in code, in `Asia/Kolkata`, not by a language model. `3pm` becomes `15:00`. `next Friday` is counted from `reference_date`, or from today if you omit that field.
+4. **Return the booking.** `dentist` is stored as Dentistry. If a required field is missing or could mean two things, the reply is `needs_clarification` instead of a booking.
+
+`POST /api/v1/pipeline` runs all four steps and also shows the checks. The other endpoints return one step each, in the shape the assignment asks for.
+
+## Try the sample
+
+`reference_date` is the "today" used for words like "next Friday". Use `2025-09-19` if you want the assignment's date, 26 September 2025. Leave it out to use the real current date in India.
+
+### 1. Read the text
 
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/extract \
@@ -156,7 +96,7 @@ curl -s -X POST http://localhost:3000/api/v1/extract \
 }
 ```
 
-### Step 2 — entities
+### 2. Find the fields
 
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/entities \
@@ -175,7 +115,7 @@ curl -s -X POST http://localhost:3000/api/v1/entities \
 }
 ```
 
-### Step 3 — normalization
+### 3. Convert to a calendar date
 
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/normalize \
@@ -194,7 +134,7 @@ curl -s -X POST http://localhost:3000/api/v1/normalize \
 }
 ```
 
-### Step 4 — appointment
+### 4. Final booking
 
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/appointments \
@@ -214,21 +154,26 @@ curl -s -X POST http://localhost:3000/api/v1/appointments \
 }
 ```
 
-### Noisy OCR text
+PowerShell, if `curl` is awkward:
 
-Step 1 keeps the recognized string. It does not invent a cleaner sentence. Step 2 repairs only unambiguous OCR tokens, so the published entity JSON is the same for both inputs: `nxt` becomes `next`, and `3 pm` becomes `3pm`. The pipeline response lists those edits in `ocr_repairs`. Step 3 then produces the same Dentistry appointment.
-
-```bash
-curl -s -X POST http://localhost:3000/api/v1/pipeline \
-  -H "Content-Type: application/json" \
-  -d "{\"text\":\"book dentist nxt Friday @ 3 pm\",\"reference_date\":\"2025-09-19\"}"
+```powershell
+$body = @{ text = "Book dentist next Friday at 3pm"; reference_date = "2025-09-19" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/v1/appointments -ContentType "application/json" -Body $body
 ```
 
-The appointment block is the same Dentistry / 2025-09-26 / 15:00 result. `entities.date_phrase` is `"next Friday"` and `entities.time_phrase` is `"3pm"`, matching the assignment sample. `extraction.raw_text` stays `"book dentist nxt Friday @ 3 pm"`.
+The same requests are in `examples/curl.sh` and `examples/appointment-scheduler.postman_collection.json`.
 
-### Image
+## A messy note, and a photo
 
-`samples/ocr-note.png` is a rendered note with that noisy line. Generate it with `examples/generate-sample-image.ps1` if it is missing, then:
+The assignment's OCR sample is:
+
+```text
+book dentist nxt Friday @ 3 pm
+```
+
+Step 1 returns that string as it was read. Step 2 still returns `next Friday`, `3pm`, and `dentist`. The booking is the same Dentistry appointment. `POST /api/v1/pipeline` also lists the repairs, for example `nxt Friday -> next Friday`.
+
+A photo of that line is in `samples/ocr-note.png`.
 
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/pipeline \
@@ -236,19 +181,17 @@ curl -s -X POST http://localhost:3000/api/v1/pipeline \
   -F "image=@samples/ocr-note.png"
 ```
 
-PowerShell:
+On Windows, use `curl.exe`, not the `curl` alias:
 
 ```powershell
 curl.exe -s -X POST http://localhost:3000/api/v1/pipeline -F "reference_date=2025-09-19" -F "image=@samples/ocr-note.png"
 ```
 
-### Guardrail
+Send either text or an image, not both. The file field can be named `image` or `file`.
 
-```bash
-curl -s -X POST http://localhost:3000/api/v1/appointments \
-  -H "Content-Type: application/json" \
-  -d "{\"text\":\"Book dentist Friday or Monday at 3pm\",\"reference_date\":\"2025-09-19\"}"
-```
+## When it will not book
+
+This body means the note is not safe to book:
 
 ```json
 {
@@ -257,93 +200,71 @@ curl -s -X POST http://localhost:3000/api/v1/appointments \
 }
 ```
 
-The same body is returned for:
+That happens when:
 
-- no date, no time, or no known department
-- two departments, or two different clocks
-- "Friday or Monday", "3pm or 4pm"
-- a clock hour with no am/pm, or only "morning" / "evening"
-- `01/02/2025`, because day/month and month/day are both possible
-- a date in the past
-- the word "doctor" with no specialty
-- a model result that is grounded in the text but disagrees with the deterministic parse
+- the date, the time, or the department is missing
+- the note says two days, two times, or two departments
+- the time is only "morning", or a number with no am/pm, like "at 3"
+- the date is `01/02/2025`, because that could be 1 February or 2 January
+- the date is already in the past
+- it only says "doctor", with no specialty
 
-`examples/demo.ps1` runs the full set against a server on port 3000. Import `examples/appointment-scheduler.postman_collection.json` for the same calls.
+Try it:
 
-## Normalization rules
-
-- Time zone is always `Asia/Kolkata`.
-- `next Friday` / `coming Friday` / `nxt Friday` is the next Friday. If today is Friday, that is seven days later.
-- `this Friday` is Friday of the current week. If that day has passed, the request needs clarification.
-- A bare weekday means the soonest one, including today.
-- `today`, `tomorrow`, `day after tomorrow`, and `in N days` are supported.
-- `26 September 2025`, `September 26, 2025`, and `2025-09-26` are explicit.
-- A numeric date such as `26/09/2025` is day/month/year when one side is greater than 12. If both are 12 or less, the service asks.
-- A month and day with no year uses the reference year, or the next year if that day has already passed.
-- `3pm`, `3 pm`, and `3 p.m.` are `15:00`. `15:00` stays `15:00`. `noon` is `12:00`. `midnight` is `00:00`.
-- `1` through `12` with no am/pm is ambiguous. `13:00` through `23:59` is 24-hour time.
-- Department aliases map to a canonical specialty. `dentist` and `dental` become `Dentistry`. Unknown words are not guessed.
-
-## AI chain
-
-1. **Propose.** The deterministic extractor returns source phrases. If a model is configured, it is asked for the same JSON and told not to invent fields.
-2. **Ground.** Each phrase must appear in the OCR or typed text. `nxt` is accepted as `next` for this check. A model department that is not in the note is thrown away.
-3. **Compare.** If both parses are grounded and they resolve to a different day, time, or specialty, the response is `needs_clarification` instead of a silent pick.
-4. **Validate.** A second model call checks that the entities are supported. A flag is honored only when the source check agrees. Date and time values still come from the normalizer, not from the model.
-
-The pipeline response includes the trace:
-
-```json
-{
-  "ai": {
-    "mode": "deterministic",
-    "model": "deterministic-guard",
-    "grounded": true,
-    "accepted_model_entities": false,
-    "notes": [
-      "Propose step used the deterministic extractor.",
-      "Validate step confirmed every phrase appears in the source text."
-    ]
-  },
-  "validation": {
-    "grounded": true,
-    "checks": [
-      "date_phrase_in_source",
-      "time_phrase_in_source",
-      "department_in_source",
-      "date_matches_phrase",
-      "time_matches_phrase",
-      "department_is_canonical",
-      "timezone_is_asia_kolkata",
-      "appointment_matches_normalization"
-    ]
-  }
-}
+```bash
+curl -s -X POST http://localhost:3000/api/v1/appointments \
+  -H "Content-Type: application/json" \
+  -d "{\"text\":\"Book dentist Friday or Monday at 3pm\",\"reference_date\":\"2025-09-19\"}"
 ```
 
-## Project layout
+Other failures are normal HTTP errors, with `{ "error": "..." }`:
+
+| Situation | Status |
+| --- | --- |
+| Empty body, bad JSON, or a date that is not a real day | 400 |
+| The upload is not an image | 415 |
+| The image has no readable text | 422 |
+| The image is larger than 5 MB | 413 |
+
+## How dates and times are read
+
+- The clock is always `Asia/Kolkata`.
+- `next Friday` means the coming Friday. If today is already Friday, it means seven days later.
+- `this Friday` means Friday of this week. If that Friday has passed, the service asks instead of booking the past.
+- `today`, `tomorrow`, `day after tomorrow`, and `in 3 days` work.
+- `26 September 2025`, `September 26, 2025`, and `2025-09-26` are exact dates.
+- `26/09/2025` is read as day/month/year. If both numbers are 12 or less, it asks, because the order is unclear.
+- `3pm`, `3 pm`, and `3 p.m.` all become `15:00`. `noon` is `12:00`. `midnight` is `00:00`.
+- `dentist` and `dental` become Dentistry. A department that is not on the list is not guessed.
+
+## Where a model fits
+
+The date math does not go through a model. A model can suggest the words it sees, and a second call checks those words. A suggestion is kept only when the words are actually in the note. If the model names a department or a day that the note does not contain, that suggestion is thrown away. If the model and the code disagree on a real date, the service asks for clarification instead of picking one.
+
+No API key is required. Without a key, the same two checks run on the built-in reader, so the sample result does not change between machines.
+
+To use a model, copy `.env.example` to `.env` and set:
+
+```bash
+OPENAI_API_KEY=your-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+```
+
+`OPENAI_BASE_URL` can be any OpenAI-compatible API. With a key, `/api/v1/pipeline` sets `ai.mode` to `llm`. The booking JSON stays the same when the model agrees with the note.
+
+## Project files
 
 ```text
-src/http            Express routes and request parsing
-src/ocr             Tesseract worker
-src/ai              Prompts and OpenAI-compatible client
-src/scheduling      Extract, normalize, validate, pipeline
-tests               Schema, guardrail, OCR, and model-rejection tests
-examples            curl script and Postman collection
-samples             Rendered note used for the OCR demo
+src/http         routes and request checks
+src/ocr          photo text recognition
+src/ai           prompts and the model client
+src/scheduling   reading, dates, checks, and the pipeline
+tests            sample JSON, guardrails, and a rejected model field
+examples         curl, PowerShell demo, and Postman
+samples          the note image used for OCR
 ```
 
-## Recording the demo
+## What this does not do
 
-1. `npm start`
-2. Open `http://localhost:3000` so the endpoint list is visible.
-3. Run `examples/demo.ps1`, or the curl commands above.
-4. Show, in order: the clean sample appointment, the noisy sentence, the image upload, and one `needs_clarification` response.
-5. Optionally set `OPENAI_API_KEY` and call `/api/v1/pipeline` again. The appointment JSON stays the same when the model agrees. The `ai.mode` field changes to `llm`.
-
-## Assumptions
-
-- This schedules a request. It does not confirm a slot, diagnose anything, or store patient data.
-- "Next Friday" means the upcoming Friday, not "Friday of the week after next". The assignment resolves the phrase to one date, so the service does too, and documents the rule.
-- Clinical aliases cover common outpatient specialties. Anything outside that list needs a clearer department instead of a guess.
-- Entity confidence is `0.85` when date, time, and department are all found, including after an unambiguous OCR repair. Typed text uses extraction confidence `0.9`. Image confidence comes from Tesseract.
+It does not confirm that a clinic has a free slot. It does not store the request. It does not give a medical opinion. It only turns a note into structured booking fields, or asks for a clearer note.
