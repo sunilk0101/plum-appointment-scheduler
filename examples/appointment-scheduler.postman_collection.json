@@ -1,0 +1,98 @@
+{
+  "info": {
+    "name": "Plum Appointment Scheduler",
+    "description": "Problem Statement 1 sample requests. Set reference_date to 2025-09-19 to reproduce the assignment date 2025-09-26.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" }
+  ],
+  "item": [
+    {
+      "name": "1 Extract text",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"Book dentist next Friday at 3pm\",\n  \"reference_date\": \"2025-09-19\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/extract"
+      }
+    },
+    {
+      "name": "2 Extract entities",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"Book dentist next Friday at 3pm\",\n  \"reference_date\": \"2025-09-19\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/entities"
+      }
+    },
+    {
+      "name": "3 Normalize",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"entities\": {\n    \"date_phrase\": \"next Friday\",\n    \"time_phrase\": \"3pm\",\n    \"department\": \"dentist\"\n  },\n  \"reference_date\": \"2025-09-19\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/normalize"
+      }
+    },
+    {
+      "name": "4 Create appointment",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"Book dentist next Friday at 3pm\",\n  \"reference_date\": \"2025-09-19\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/appointments"
+      }
+    },
+    {
+      "name": "Pipeline noisy OCR text",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"book dentist nxt Friday @ 3 pm\",\n  \"reference_date\": \"2025-09-19\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/pipeline"
+      }
+    },
+    {
+      "name": "Guardrail ambiguous date",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"Book dentist Friday or Monday at 3pm\",\n  \"reference_date\": \"2025-09-19\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/appointments"
+      }
+    },
+    {
+      "name": "Image note",
+      "request": {
+        "method": "POST",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "reference_date", "value": "2025-09-19", "type": "text" },
+            { "key": "image", "type": "file", "src": "samples/ocr-note.png" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/v1/pipeline"
+      }
+    }
+  ]
+}
